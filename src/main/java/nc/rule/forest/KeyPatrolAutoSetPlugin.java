@@ -70,16 +70,58 @@ public class KeyPatrolAutoSetPlugin implements IBusinessListener {
             return;
         }
 
+        String reason = "连续" + highRiskCount + "次高风险，自动进入重点巡查，需检疫员二次复核";
         String sql = "update forest_trap set is_key_patrol = ?, key_patrol_reason = ?, modifier = ?, modifiedtime = ?, ts = ? "
                 + "where pk_forest_trap = ? and dr = 0";
         SQLParameter param = new SQLParameter();
         param.addParam(ForestTrapVO.IS_KEY_PATROL_YES);
-        param.addParam("连续" + highRiskCount + "次高风险，自动进入重点巡查");
+        param.addParam(reason);
         param.addParam(InvocationInfoProxy.getInstance().getUserId());
         param.addParam(new UFDateTime().toString());
         param.addParam(new UFDateTime().toString());
         param.addParam(pkForestTrap);
 
         dao.executeUpdate(sql, param);
+
+        markLatestRecordNeedSecondReview(pkForestTrap);
+    }
+
+    private void markLatestRecordNeedSecondReview(String pkForestTrap) throws BusinessException {
+        BaseDAO dao = new BaseDAO();
+
+        String querySql = "select pk_trap_record from forest_trap_record "
+                + "where pk_forest_trap = ? and dr = 0 "
+                + "order by record_date desc, creationtime desc limit 1";
+        SQLParameter queryParam = new SQLParameter();
+        queryParam.addParam(pkForestTrap);
+        Object result = dao.executeQuery(querySql, queryParam, new nc.jdbc.framework.processor.ColumnProcessor());
+
+        if (result == null) {
+            return;
+        }
+
+        String pkLatestRecord = result.toString();
+
+        String checkReviewSql = "select count(*) from forest_review where pk_trap_record = ? and dr = 0";
+        SQLParameter checkReviewParam = new SQLParameter();
+        checkReviewParam.addParam(pkLatestRecord);
+        Object reviewCount = dao.executeQuery(checkReviewSql, checkReviewParam, new nc.jdbc.framework.processor.ColumnProcessor());
+
+        int count = reviewCount != null ? ((Number) reviewCount).intValue() : 0;
+        if (count >= 2) {
+            return;
+        }
+
+        String updateSql = "update forest_trap_record set record_status = ?, modifier = ?, modifiedtime = ?, ts = ? "
+                + "where pk_trap_record = ? and dr = 0 and record_status <> ?";
+        SQLParameter updateParam = new SQLParameter();
+        updateParam.addParam(nc.vo.forest.record.TrapRecordVO.STATUS_PENDING_REVIEW);
+        updateParam.addParam(InvocationInfoProxy.getInstance().getUserId());
+        updateParam.addParam(new UFDateTime().toString());
+        updateParam.addParam(new UFDateTime().toString());
+        updateParam.addParam(pkLatestRecord);
+        updateParam.addParam(nc.vo.forest.record.TrapRecordVO.STATUS_DISPOSED);
+
+        dao.executeUpdate(updateSql, updateParam);
     }
 }

@@ -59,6 +59,15 @@ public class ForestTrapServiceImpl implements IForestTrapService {
         if (trapVO.getLatitude() == null) {
             ExceptionUtils.wrapBusinessException("纬度不能为空");
         }
+        if (trapVO.getForest_block() == null || trapVO.getForest_block().trim().isEmpty()) {
+            ExceptionUtils.wrapBusinessException("林班不能为空");
+        }
+        if (trapVO.getTree_species() == null || trapVO.getTree_species().trim().isEmpty()) {
+            ExceptionUtils.wrapBusinessException("树种不能为空");
+        }
+        if (trapVO.getTrap_cycle() == null || trapVO.getTrap_cycle() <= 0) {
+            ExceptionUtils.wrapBusinessException("诱捕周期不能为空且必须大于0");
+        }
 
         ForestTrapVO existing = queryTrapByCode(trapVO.getTrap_code(), trapVO.getPk_org());
         if (existing != null) {

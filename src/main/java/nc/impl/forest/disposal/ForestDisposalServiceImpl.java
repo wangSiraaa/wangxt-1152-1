@@ -11,7 +11,9 @@ import nc.rule.forest.ForestBusinessValidator;
 import nc.vo.forest.disposal.DisposalPhotoVO;
 import nc.vo.forest.disposal.ForestDisposalVO;
 import nc.vo.forest.record.TrapRecordVO;
+import nc.vo.forest.recheck.RecheckPlanVO;
 import nc.vo.pub.BusinessException;
+import nc.vo.pub.lang.UFDate;
 import nc.vo.pub.lang.UFDateTime;
 import nc.vo.pub.VOStatus;
 import nccloud.framework.core.exception.ExceptionUtils;
@@ -51,6 +53,15 @@ public class ForestDisposalServiceImpl implements IForestDisposalService {
         }
         if (disposalVO.getDisposal_date() == null) {
             ExceptionUtils.wrapBusinessException("处置日期不能为空");
+        }
+        if (disposalVO.getDisposal_longitude() == null) {
+            ExceptionUtils.wrapBusinessException("处置位置经度不能为空");
+        }
+        if (disposalVO.getDisposal_latitude() == null) {
+            ExceptionUtils.wrapBusinessException("处置位置纬度不能为空");
+        }
+        if (disposalVO.getDisposal_method() == null || disposalVO.getDisposal_method().trim().isEmpty()) {
+            ExceptionUtils.wrapBusinessException("处置方式不能为空");
         }
 
         ForestBusinessValidator.validateAllowDisposal(disposalVO.getPk_trap_record());
@@ -125,6 +136,8 @@ public class ForestDisposalServiceImpl implements IForestDisposalService {
         fillAuditFields(disposalVO, false);
         disposalVO.setStatus(VOStatus.UPDATED);
         dao.updateVO(disposalVO);
+
+        generateRecheckPlans(disposalVO);
 
         fireEvent(disposalVO, IEventType.TYPE_UPDATE_AFTER);
 
@@ -239,6 +252,71 @@ public class ForestDisposalServiceImpl implements IForestDisposalService {
 
         vo.setCreator(userId);
         vo.setCreationtime(now);
+    }
+
+    private void generateRecheckPlans(ForestDisposalVO disposalVO) throws BusinessException {
+        String pkTrapRecord = disposalVO.getPk_trap_record();
+        String pkForestTrap = getForestTrapByRecord(pkTrapRecord);
+        String pkRanger = getRangerByTrap(pkForestTrap);
+
+        UFDate disposalDate = new UFDate(disposalVO.getDisposal_date().getTime());
+
+        RecheckPlanVO firstPlan = createRecheckPlan(disposalVO, pkTrapRecord, pkForestTrap, pkRanger,
+                disposalDate, RecheckPlanVO.TYPE_FIRST, 7);
+        RecheckPlanVO secondPlan = createRecheckPlan(disposalVO, pkTrapRecord, pkForestTrap, pkRanger,
+                disposalDate, RecheckPlanVO.TYPE_SECOND, 30);
+        RecheckPlanVO thirdPlan = createRecheckPlan(disposalVO, pkTrapRecord, pkForestTrap, pkRanger,
+                disposalDate, RecheckPlanVO.TYPE_THIRD, 90);
+
+        dao.insertVO(firstPlan);
+        dao.insertVO(secondPlan);
+        dao.insertVO(thirdPlan);
+    }
+
+    private RecheckPlanVO createRecheckPlan(ForestDisposalVO disposalVO, String pkTrapRecord,
+                                             String pkForestTrap, String pkRanger,
+                                             UFDate baseDate, int recheckType, int daysOffset) {
+        RecheckPlanVO planVO = new RecheckPlanVO();
+        planVO.setPk_forest_disposal(disposalVO.getPk_forest_disposal());
+        planVO.setPk_trap_record(pkTrapRecord);
+        planVO.setPk_forest_trap(pkForestTrap);
+        planVO.setRecheck_type(recheckType);
+        planVO.setRecheck_status(RecheckPlanVO.STATUS_PENDING);
+        planVO.setPk_ranger(pkRanger);
+        planVO.setPk_org(disposalVO.getPk_org());
+        planVO.setPk_group(disposalVO.getPk_group());
+
+        long planTime = baseDate.getTime() + (long) daysOffset * 24 * 60 * 60 * 1000;
+        planVO.setPlan_date(new UFDate(planTime));
+
+        UFDateTime now = new UFDateTime();
+        String userId = InvocationInfoProxy.getInstance().getUserId();
+        planVO.setCreator(userId);
+        planVO.setCreationtime(now);
+        planVO.setModifier(userId);
+        planVO.setModifiedtime(now);
+        planVO.setStatus(VOStatus.NEW);
+
+        return planVO;
+    }
+
+    private String getForestTrapByRecord(String pkTrapRecord) throws BusinessException {
+        String sql = "select pk_forest_trap from forest_trap_record where pk_trap_record = ? and dr = 0";
+        SQLParameter param = new SQLParameter();
+        param.addParam(pkTrapRecord);
+        Object result = dao.executeQuery(sql, param, new nc.jdbc.framework.processor.ColumnProcessor());
+        return result != null ? result.toString() : null;
+    }
+
+    private String getRangerByTrap(String pkForestTrap) throws BusinessException {
+        if (pkForestTrap == null) {
+            return null;
+        }
+        String sql = "select pk_ranger from forest_trap where pk_forest_trap = ? and dr = 0";
+        SQLParameter param = new SQLParameter();
+        param.addParam(pkForestTrap);
+        Object result = dao.executeQuery(sql, param, new nc.jdbc.framework.processor.ColumnProcessor());
+        return result != null ? result.toString() : null;
     }
 
     private void fireEvent(ForestDisposalVO disposalVO, String eventType) {

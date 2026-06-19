@@ -11,6 +11,8 @@ public class ForestDisposalVO extends SuperVO {
     public static final String PK_FOREST_DISPOSAL = "pk_forest_disposal";
     public static final String PK_TRAP_RECORD = "pk_trap_record";
     public static final String DISPOSAL_DATE = "disposal_date";
+    public static final String DISPOSAL_LONGITUDE = "disposal_longitude";
+    public static final String DISPOSAL_LATITUDE = "disposal_latitude";
     public static final String DISPOSAL_TYPE = "disposal_type";
     public static final String DISPOSAL_METHOD = "disposal_method";
     public static final String DISPOSAL_AREA = "disposal_area";
@@ -38,6 +40,8 @@ public class ForestDisposalVO extends SuperVO {
     private String pk_forest_disposal;
     private String pk_trap_record;
     private UFDate disposal_date;
+    private UFDouble disposal_longitude;
+    private UFDouble disposal_latitude;
     private String disposal_type;
     private String disposal_method;
     private UFDouble disposal_area;
@@ -92,6 +96,22 @@ public class ForestDisposalVO extends SuperVO {
 
     public void setDisposal_date(UFDate disposal_date) {
         this.disposal_date = disposal_date;
+    }
+
+    public UFDouble getDisposal_longitude() {
+        return disposal_longitude;
+    }
+
+    public void setDisposal_longitude(UFDouble disposal_longitude) {
+        this.disposal_longitude = disposal_longitude;
+    }
+
+    public UFDouble getDisposal_latitude() {
+        return disposal_latitude;
+    }
+
+    public void setDisposal_latitude(UFDouble disposal_latitude) {
+        this.disposal_latitude = disposal_latitude;
     }
 
     public String getDisposal_type() {

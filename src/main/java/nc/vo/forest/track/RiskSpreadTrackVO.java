@@ -1,28 +1,27 @@
-package nc.vo.forest.trap;
+package nc.vo.forest.track;
 
 import nc.vo.pub.SuperVO;
 import nc.vo.pub.lang.UFDate;
 import nc.vo.pub.lang.UFDateTime;
 import nc.vo.pub.lang.UFDouble;
 
-public class ForestTrapVO extends SuperVO {
+public class RiskSpreadTrackVO extends SuperVO {
     private static final long serialVersionUID = 1L;
 
+    public static final String PK_RISK_TRACK = "pk_risk_track";
     public static final String PK_FOREST_TRAP = "pk_forest_trap";
-    public static final String TRAP_CODE = "trap_code";
-    public static final String TRAP_NAME = "trap_name";
+    public static final String PK_TRAP_RECORD = "pk_trap_record";
+    public static final String TRACK_DATE = "track_date";
     public static final String LONGITUDE = "longitude";
     public static final String LATITUDE = "latitude";
-    public static final String LOCATION_DESC = "location_desc";
+    public static final String RISK_LEVEL = "risk_level";
+    public static final String RISK_TREND = "risk_trend";
+    public static final String INSECT_TYPE = "insect_type";
+    public static final String INSECT_COUNT = "insect_count";
     public static final String FOREST_BLOCK = "forest_block";
     public static final String TREE_SPECIES = "tree_species";
-    public static final String TRAP_CYCLE = "trap_cycle";
-    public static final String FOREST_TYPE = "forest_type";
-    public static final String TRAP_TYPE = "trap_type";
-    public static final String INSTALL_DATE = "install_date";
-    public static final String IS_KEY_PATROL = "is_key_patrol";
-    public static final String KEY_PATROL_REASON = "key_patrol_reason";
-    public static final String PK_RANGER = "pk_ranger";
+    public static final String SPREAD_RADIUS = "spread_radius";
+    public static final String TRACK_REMARK = "track_remark";
     public static final String PK_ORG = "pk_org";
     public static final String PK_GROUP = "pk_group";
     public static final String CREATOR = "creator";
@@ -32,24 +31,25 @@ public class ForestTrapVO extends SuperVO {
     public static final String DR = "dr";
     public static final String TS = "ts";
 
-    public static final int NOT_KEY_PATROL = 0;
-    public static final int IS_KEY_PATROL_YES = 1;
+    public static final int TREND_STABLE = 1;
+    public static final int TREND_UP = 2;
+    public static final int TREND_DOWN = 3;
+    public static final int TREND_SPREAD = 4;
 
+    private String pk_risk_track;
     private String pk_forest_trap;
-    private String trap_code;
-    private String trap_name;
+    private String pk_trap_record;
+    private UFDate track_date;
     private UFDouble longitude;
     private UFDouble latitude;
-    private String location_desc;
+    private Integer risk_level;
+    private Integer risk_trend;
+    private String insect_type;
+    private Integer insect_count;
     private String forest_block;
     private String tree_species;
-    private Integer trap_cycle;
-    private String forest_type;
-    private String trap_type;
-    private UFDate install_date;
-    private Integer is_key_patrol = 0;
-    private String key_patrol_reason;
-    private String pk_ranger;
+    private UFDouble spread_radius;
+    private String track_remark;
     private String pk_org;
     private String pk_group;
     private String creator;
@@ -61,17 +61,25 @@ public class ForestTrapVO extends SuperVO {
 
     @Override
     public String getTableName() {
-        return "forest_trap";
+        return "forest_risk_spread_track";
     }
 
     @Override
     public String getPKFieldName() {
-        return PK_FOREST_TRAP;
+        return PK_RISK_TRACK;
     }
 
     @Override
     public String getParentPKFieldName() {
-        return null;
+        return PK_FOREST_TRAP;
+    }
+
+    public String getPk_risk_track() {
+        return pk_risk_track;
+    }
+
+    public void setPk_risk_track(String pk_risk_track) {
+        this.pk_risk_track = pk_risk_track;
     }
 
     public String getPk_forest_trap() {
@@ -82,20 +90,20 @@ public class ForestTrapVO extends SuperVO {
         this.pk_forest_trap = pk_forest_trap;
     }
 
-    public String getTrap_code() {
-        return trap_code;
+    public String getPk_trap_record() {
+        return pk_trap_record;
     }
 
-    public void setTrap_code(String trap_code) {
-        this.trap_code = trap_code;
+    public void setPk_trap_record(String pk_trap_record) {
+        this.pk_trap_record = pk_trap_record;
     }
 
-    public String getTrap_name() {
-        return trap_name;
+    public UFDate getTrack_date() {
+        return track_date;
     }
 
-    public void setTrap_name(String trap_name) {
-        this.trap_name = trap_name;
+    public void setTrack_date(UFDate track_date) {
+        this.track_date = track_date;
     }
 
     public UFDouble getLongitude() {
@@ -114,12 +122,36 @@ public class ForestTrapVO extends SuperVO {
         this.latitude = latitude;
     }
 
-    public String getLocation_desc() {
-        return location_desc;
+    public Integer getRisk_level() {
+        return risk_level;
     }
 
-    public void setLocation_desc(String location_desc) {
-        this.location_desc = location_desc;
+    public void setRisk_level(Integer risk_level) {
+        this.risk_level = risk_level;
+    }
+
+    public Integer getRisk_trend() {
+        return risk_trend;
+    }
+
+    public void setRisk_trend(Integer risk_trend) {
+        this.risk_trend = risk_trend;
+    }
+
+    public String getInsect_type() {
+        return insect_type;
+    }
+
+    public void setInsect_type(String insect_type) {
+        this.insect_type = insect_type;
+    }
+
+    public Integer getInsect_count() {
+        return insect_count;
+    }
+
+    public void setInsect_count(Integer insect_count) {
+        this.insect_count = insect_count;
     }
 
     public String getForest_block() {
@@ -138,60 +170,20 @@ public class ForestTrapVO extends SuperVO {
         this.tree_species = tree_species;
     }
 
-    public Integer getTrap_cycle() {
-        return trap_cycle;
+    public UFDouble getSpread_radius() {
+        return spread_radius;
     }
 
-    public void setTrap_cycle(Integer trap_cycle) {
-        this.trap_cycle = trap_cycle;
+    public void setSpread_radius(UFDouble spread_radius) {
+        this.spread_radius = spread_radius;
     }
 
-    public String getForest_type() {
-        return forest_type;
+    public String getTrack_remark() {
+        return track_remark;
     }
 
-    public void setForest_type(String forest_type) {
-        this.forest_type = forest_type;
-    }
-
-    public String getTrap_type() {
-        return trap_type;
-    }
-
-    public void setTrap_type(String trap_type) {
-        this.trap_type = trap_type;
-    }
-
-    public UFDate getInstall_date() {
-        return install_date;
-    }
-
-    public void setInstall_date(UFDate install_date) {
-        this.install_date = install_date;
-    }
-
-    public Integer getIs_key_patrol() {
-        return is_key_patrol;
-    }
-
-    public void setIs_key_patrol(Integer is_key_patrol) {
-        this.is_key_patrol = is_key_patrol;
-    }
-
-    public String getKey_patrol_reason() {
-        return key_patrol_reason;
-    }
-
-    public void setKey_patrol_reason(String key_patrol_reason) {
-        this.key_patrol_reason = key_patrol_reason;
-    }
-
-    public String getPk_ranger() {
-        return pk_ranger;
-    }
-
-    public void setPk_ranger(String pk_ranger) {
-        this.pk_ranger = pk_ranger;
+    public void setTrack_remark(String track_remark) {
+        this.track_remark = track_remark;
     }
 
     public String getPk_org() {
