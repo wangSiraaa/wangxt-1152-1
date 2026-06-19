@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd">
+
+    <bean name="forestUserAction" class="nc.action.forest.user.ForestUserAction"/>
+    <bean name="forestTrapAction" class="nc.action.forest.trap.ForestTrapAction"/>
+    <bean name="trapRecordAction" class="nc.action.forest.record.TrapRecordAction"/>
+    <bean name="forestReviewAction" class="nc.action.forest.review.ForestReviewAction"/>
+    <bean name="forestDisposalAction" class="nc.action.forest.disposal.ForestDisposalAction"/>
+
+</beans>
