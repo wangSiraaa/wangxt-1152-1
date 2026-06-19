@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>处置队工作台 - 林业有害生物诱捕监测系统</title>
+    <link rel="stylesheet" href="css/common.css">
+</head>
+<body>
+    <div id="app" class="app-layout"></div>
+
+    <script src="js/common.js"></script>
+    <script>
+        if (!requireLogin(3)) throw new Error('need login');
+        const user = getUserInfo();
+
+        let currentMenu = 'pending';
+        let pendingList = [];
+        let processingList = [];
+        let completedList = [];
+
+        function render() {
+            document.getElementById('app').innerHTML = `
+                ${renderSidebar(currentMenu)}
+                <div class="app-main">
+                    <div class="app-header">
+                        <div class="page-title">${getPageTitle()}</div>
+                        <div style="color:#718096;font-size:14px">
+                            ${user.user_name} · ${user.role_name}
+                        </div>
+                    </div>
+                    <div class="app-content" id="appContent"></div>
+                </div>
+            `;
+            document.querySelectorAll('#sidebarMenu li').forEach(li => {
+                li.onclick = () => {
+                    currentMenu = li.dataset.key;
+                    render();
+                };
+            });
+            renderContent();
+        }
+
+        function getPageTitle() {
+            const titles = {
+                pending: '待处置任务列表',
+                processing: '处置中任务',
+                completed: '已完成任务'
+            };
+            return titles[currentMenu] || '';
+        }
+
+        async function renderContent() {
+            const content = document.getElementById('appContent');
+            if (currentMenu === 'pending') {
+                await renderPendingPage(content);
+            } else if (currentMenu === 'processing') {
+                await renderProcessingPage(content);
+            } else if (currentMenu === 'completed') {
+                await renderCompletedPage(content);
+            }
+        }
+
+        async function renderPendingPage(container) {
+            const result = await apiGet(`${API_BASE}/record?action=list`, { status: 1 });
+            const reviewedRecords = result.success ? (result.data || []) : [];
+            const disResult = await apiGet(`${API_BASE}/disposal?action=list`);
+            const allDisposals = disResult.success ? (disResult.data || []) : [];
+            const handledRecordIds = new Set(allDisposals.map(d => d.pk_trap_record));
+
+            pendingList = reviewedRecords.filter(r => !handledRecordIds.has(r.pk_trap_record));
+
+            container.innerHTML = `
+                <div class="alert alert-info">
+                    📦 以下是已通过复核、可进行疫木清理处置的诱捕记录。疑似检疫对象需复核通过后方可处置。
+                </div>
+
+                <div class="page-section">
+                    <div class="toolbar">
+                        <div class="toolbar-left">
+                            <span style="color:#718096">共 ${pendingList.length} 条待处置记录</span>
+                        </div>
+                        <div class="toolbar-left">
+                            <label style="color:#718096;margin-right:10px">
+                                <input type="checkbox" id="filterSuspect" onchange="filterPending()" style="margin-right:5px">
+                                仅显示疑似检疫
+                            </label>
+                        </div>
+                    </div>
+
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>登记日期</th>
+                                <th>诱捕器</th>
+                                <th>害虫种类</th>
+                                <th>数量</th>
+                                <th>疑似检疫</th>
+                                <th>风险等级</th>
+                                <th>位置</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pendingTableBody">
+                            ${renderPendingRows(pendingList)}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function renderPendingRows(records) {
+            if (records.length === 0) {
+                return `<tr><td colspan="8" class="empty-state">
+                    <div class="empty-state-icon">🎉</div>暂无待处置任务
+                </td></tr>`;
+            }
+            return records.map(r => `
+                <tr style="${r.is_suspect_quarantine == 1 ? 'background:#fff5f5' : ''}">
+                    <td>${formatDate(r.record_date)}</td>
+                    <td>${r.trap_code}</td>
+                    <td>${r.insect_type}</td>
+                    <td>${r.insect_count}</td>
+                    <td>${getSuspectBadge(r.is_suspect_quarantine)}</td>
+                    <td>${getRiskBadge(r.risk_level)}</td>
+                    <td>${r.location_desc || '-'}</td>
+                    <td>
+                        <button class="btn btn-sm btn-default" onclick="viewRecord('${r.pk_trap_record}')">详情</button>
+                        <button class="btn btn-sm btn-success" onclick="showCreateDisposalModal('${r.pk_trap_record}')">创建处置单</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function filterPending() {
+            const onlySuspect = document.getElementById('filterSuspect').checked;
+            const filtered = onlySuspect ? pendingList.filter(r => r.is_suspect_quarantine == 1) : pendingList;
+            document.getElementById('pendingTableBody').innerHTML = renderPendingRows(filtered);
+        }
+
+        async function renderProcessingPage(container) {
+            const result = await apiGet(`${API_BASE}/disposal?action=list`, { status: 1 });
+            processingList = result.success ? (result.data || []) : [];
+
+            container.innerHTML = `
+                <div class="alert alert-warning">
+                    ⚙️ 正在处置中的任务，请在完成清理后上传照片并关闭处置单。
+                </div>
+
+                <div class="page-section">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>创建日期</th>
+                                <th>诱捕器</th>
+                                <th>害虫种类</th>
+                                <th>处置方式</th>
+                                <th>清理株数</th>
+                                <th>拍照</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${processingList.length === 0 ? `
+                                <tr><td colspan="7" class="empty-state">
+                                    <div class="empty-state-icon">📋</div>暂无处置中任务
+                                </td></tr>
+                            ` : processingList.map(d => `
+                                <tr>
+                                    <td>${formatDate(d.disposal_date)}</td>
+                                    <td>${d.trap_code}</td>
+                                    <td>${d.insect_type}</td>
+                                    <td>${d.disposal_method || '-'}</td>
+                                    <td>${d.tree_count || '-'}</td>
+                                    <td>${d.has_photo == 1 ? '<span class="badge badge-success">已上传</span>' : '<span class="badge badge-pending">未上传</span>'}</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-default" onclick="viewDisposal('${d.pk_forest_disposal}')">详情</button>
+                                        <button class="btn btn-sm btn-primary" onclick="showUploadPhotoModal('${d.pk_forest_disposal}')">上传照片</button>
+                                        <button class="btn btn-sm btn-success" onclick="closeDisposal('${d.pk_forest_disposal}', ${d.has_photo})">关闭</button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        async function renderCompletedPage(container) {
+            const result = await apiGet(`${API_BASE}/disposal?action=list`, { status: 2 });
+            completedList = result.success ? (result.data || []) : [];
+
+            container.innerHTML = `
+                <div class="stat-grid">
+                    <div class="stat-card success"><div class="stat-value">${completedList.length}</div><div class="stat-label">已完成任务</div></div>
+                    <div class="stat-card info"><div class="stat-value">${completedList.reduce((s, d) => s + (d.tree_count || 0), 0)}</div><div class="stat-label">累计清理株数</div></div>
+                </div>
+
+                <div class="page-section">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>完成日期</th>
+                                <th>诱捕器</th>
+                                <th>害虫种类</th>
+                                <th>处置方式</th>
+                                <th>清理株数</th>
+                                <th>面积(亩)</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${completedList.length === 0 ? `
+                                <tr><td colspan="7" class="empty-state">
+                                    <div class="empty-state-icon">✅</div>暂无已完成任务
+                                </td></tr>
+                            ` : completedList.map(d => `
+                                <tr>
+                                    <td>${formatDate(d.disposal_date)}</td>
+                                    <td>${d.trap_code}</td>
+                                    <td>${d.insect_type}</td>
+                                    <td>${d.disposal_method || '-'}</td>
+                                    <td>${d.tree_count || '-'}</td>
+                                    <td>${d.disposal_area || '-'}</td>
+                                    <td><button class="btn btn-sm btn-default" onclick="viewDisposal('${d.pk_forest_disposal}')">详情</button></td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        async function viewRecord(pk) {
+            const result = await apiGet(`${API_BASE}/record?action=query`, { pk });
+            if (!result.success) return;
+            const r = result.data;
+            let html = `
+                <div class="detail-row"><span class="detail-label">登记日期</span><span class="detail-value">${formatDate(r.record_date)}</span></div>
+                <div class="detail-row"><span class="detail-label">诱捕器</span><span class="detail-value">${r.trap_code} - ${r.trap_name}</span></div>
+                <div class="detail-row"><span class="detail-label">位置</span><span class="detail-value">${r.location_desc}</span></div>
+                <div class="detail-row"><span class="detail-label">坐标</span><span class="detail-value">${r.longitude}, ${r.latitude}</span></div>
+                <div class="detail-row"><span class="detail-label">害虫种类</span><span class="detail-value">${r.insect_type}</span></div>
+                <div class="detail-row"><span class="detail-label">捕获数量</span><span class="detail-value">${r.insect_count} 只</span></div>
+                <div class="detail-row"><span class="detail-label">疑似检疫</span><span class="detail-value">${getSuspectBadge(r.is_suspect_quarantine)}</span></div>
+                <div class="detail-row"><span class="detail-label">风险等级</span><span class="detail-value">${getRiskBadge(r.risk_level)}</span></div>
+            `;
+            if (r.reviews && r.reviews.length > 0) {
+                html += `<div style="margin-top:15px;padding-top:10px;border-top:1px solid #eee"><b>复核记录：</b></div>`;
+                r.reviews.forEach(v => {
+                    html += `
+                        <div class="detail-row"><span class="detail-label">复核日期</span><span class="detail-value">${formatDate(v.review_date)}</span></div>
+                        <div class="detail-row"><span class="detail-label">风险等级</span><span class="detail-value">${getRiskBadge(v.risk_level)}</span></div>
+                        <div class="detail-row"><span class="detail-label">检疫对象</span><span class="detail-value">${v.is_quarantine == 1 ? '是' : '否'}</span></div>
+                        <div class="detail-row"><span class="detail-label">允许清理</span><span class="detail-value">${v.is_allow_disposal == 1 ? '✅ 允许' : '❌ 不允许'}</span></div>
+                    `;
+                });
+            }
+            showModal('诱捕记录详情', html, (mask) => {
+                showCreateDisposalModal(pk);
+                return true;
+            });
+            const modal = document.querySelector('.modal-mask:last-child');
+            if (modal) {
+                const okBtn = modal.querySelector('.modal-ok');
+                okBtn.textContent = '创建处置单';
+                okBtn.className = 'btn btn-success';
+            }
+        }
+
+        async function viewDisposal(pk) {
+            const result = await apiGet(`${API_BASE}/disposal?action=query`, { pk });
+            if (!result.success) return;
+            const d = result.data;
+            let html = `
+                <div class="detail-row"><span class="detail-label">处置日期</span><span class="detail-value">${formatDate(d.disposal_date)}</span></div>
+                <div class="detail-row"><span class="detail-label">诱捕器</span><span class="detail-value">${d.trap_code} - ${d.trap_name}</span></div>
+                <div class="detail-row"><span class="detail-label">位置</span><span class="detail-value">${d.location_desc || '-'}</span></div>
+                <div class="detail-row"><span class="detail-label">害虫种类</span><span class="detail-value">${d.insect_type}</span></div>
+                <div class="detail-row"><span class="detail-label">处置类型</span><span class="detail-value">${d.disposal_type || '-'}</span></div>
+                <div class="detail-row"><span class="detail-label">处置方式</span><span class="detail-value">${d.disposal_method || '-'}</span></div>
+                <div class="detail-row"><span class="detail-label">清理株数</span><span class="detail-value">${d.tree_count || '-'} 株</span></div>
+                <div class="detail-row"><span class="detail-label">处置面积</span><span class="detail-value">${d.disposal_area || '-'} 亩</span></div>
+                <div class="detail-row"><span class="detail-label">拍照验证</span><span class="detail-value">${d.has_photo == 1 ? '✅ 已上传' : '❌ 未上传'}</span></div>
+                <div class="detail-row"><span class="detail-label">处置状态</span><span class="detail-value">${getDisposalStatusBadge(d.disposal_status)}</span></div>
+                ${d.disposal_remark ? `<div class="detail-row"><span class="detail-label">处置备注</span><span class="detail-value">${d.disposal_remark}</span></div>` : ''}
+            `;
+            if (d.photos && d.photos.length > 0) {
+                html += `<div style="margin-top:15px;padding-top:10px;border-top:1px solid #eee"><b>已上传照片(${d.photos.length})：</b></div>`;
+                d.photos.forEach(p => {
+                    html += `
+                        <div class="detail-row"><span class="detail-label">${p.photo_type || '照片'}</span><span class="detail-value">${p.photo_url}</span></div>
+                        ${p.photo_remark ? `<div class="detail-row"><span class="detail-label">备注</span><span class="detail-value">${p.photo_remark}</span></div>` : ''}
+                    `;
+                });
+            }
+            showModal('处置单详情', html);
+        }
+
+        function showCreateDisposalModal(pkRecord) {
+            const html = `
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">处置日期</label>
+                        <input class="form-input" id="f_disposalDate" type="date">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">处置类型</label>
+                        <select class="form-select" id="f_disposalType">
+                            <option value="">请选择</option>
+                            <option value="疫木清理">疫木清理</option>
+                            <option value="熏蒸处理">熏蒸处理</option>
+                            <option value="药剂防治">药剂防治</option>
+                            <option value="其他">其他</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">处置方式</label>
+                        <input class="form-input" id="f_disposalMethod" placeholder="如: 采伐烧毁、熏蒸处理等">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">清理株数(株)</label>
+                        <input class="form-input" id="f_treeCount" type="number" min="0" placeholder="请输入">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">处置面积(亩)</label>
+                    <input class="form-input" id="f_disposalArea" type="number" step="0.01" min="0" placeholder="请输入处置面积">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">处置备注</label>
+                    <textarea class="form-textarea" id="f_disposalRemark" placeholder="请填写处置说明..."></textarea>
+                </div>
+                <div class="alert alert-warning" style="margin-top:10px">
+                    ⚠️ 注意：清理完成后必须上传清理现场照片才能关闭处置单
+                </div>
+            `;
+            showModal('创建疫木清理处置单', html, async (mask) => {
+                const disposal_date = mask.querySelector('#f_disposalDate').value;
+                const disposal_type = mask.querySelector('#f_disposalType').value;
+                const disposal_method = mask.querySelector('#f_disposalMethod').value.trim();
+                const tree_count = mask.querySelector('#f_treeCount').value;
+                const disposal_area = mask.querySelector('#f_disposalArea').value;
+                const disposal_remark = mask.querySelector('#f_disposalRemark').value.trim();
+
+                const result = await apiPost(`${API_BASE}/disposal?action=create`, {
+                    pk_trap_record: pkRecord,
+                    disposal_date, disposal_type, disposal_method,
+                    tree_count: tree_count ? parseInt(tree_count) : null,
+                    disposal_area: disposal_area ? parseFloat(disposal_area) : null,
+                    disposal_remark
+                });
+                if (result.success) {
+                    showAlert(result.data && result.data.message ? result.data.message : '处置单创建成功', 'success');
+                    currentMenu = 'processing';
+                    render();
+                } else {
+                    showAlert(result.data || '创建失败', 'danger');
+                    return false;
+                }
+            });
+            document.getElementById('f_disposalDate').valueAsDate = new Date();
+        }
+
+        function showUploadPhotoModal(pkDisposal) {
+            const fakeUrl = 'https://example.com/photo/' + Date.now() + '.jpg';
+            const html = `
+                <div class="form-group">
+                    <label class="form-label">照片类型</label>
+                    <select class="form-select" id="f_photoType">
+                        <option value="清理前照片">清理前照片</option>
+                        <option value="清理中照片">清理中照片</option>
+                        <option value="清理后照片" selected>清理后照片</option>
+                        <option value="现场照片">现场照片</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">照片URL</label>
+                    <input class="form-input" id="f_photoUrl" value="${fakeUrl}" readonly>
+                    <div class="tip-text">实际应用中此处为文件上传，此处使用模拟URL</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">照片说明</label>
+                    <textarea class="form-textarea" id="f_photoRemark" placeholder="请填写照片说明..."></textarea>
+                </div>
+            `;
+            showModal('上传清理照片', html, async (mask) => {
+                const photo_type = mask.querySelector('#f_photoType').value;
+                const photo_url = mask.querySelector('#f_photoUrl').value;
+                const photo_remark = mask.querySelector('#f_photoRemark').value.trim();
+
+                const result = await apiPost(`${API_BASE}/disposal?action=uploadPhoto`, {
+                    pk_forest_disposal: pkDisposal,
+                    photo_type, photo_url, photo_remark
+                });
+                if (result.success) {
+                    showAlert('照片上传成功', 'success');
+                    renderContent();
+                } else {
+                    showAlert(result.data || '上传失败', 'danger');
+                    return false;
+                }
+            });
+        }
+
+        async function closeDisposal(pk, hasPhoto) {
+            if (hasPhoto != 1) {
+                showAlert('疫木清理未拍照，不能关闭处置单！请先上传清理照片。', 'danger');
+                return;
+            }
+            if (!confirm('确定要关闭此处置单吗？关闭后将标记为已完成。')) return;
+
+            const result = await apiPost(`${API_BASE}/disposal?action=close`, { pk });
+            if (result.success) {
+                showAlert('处置单已关闭', 'success');
+                currentMenu = 'completed';
+                render();
+            } else {
+                showAlert(result.data || '关闭失败', 'danger');
+            }
+        }
+
+        render();
+    </script>
+</body>
+</html>

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>登录 - 林业有害生物诱捕监测系统</title>
+    <link rel="stylesheet" href="css/common.css">
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-box">
+            <h2 class="login-title" id="loginTitle">用户登录</h2>
+            <div id="alertArea"></div>
+            <div class="form-group">
+                <label class="form-label">账号</label>
+                <input class="form-input" id="userCode" placeholder="请输入账号">
+            </div>
+            <div class="form-group">
+                <label class="form-label">密码</label>
+                <input class="form-input" type="password" id="password" placeholder="请输入密码">
+            </div>
+            <button class="btn btn-primary login-btn" onclick="doLogin()">登 录</button>
+            <div style="margin-top:20px;text-align:center">
+                <a href="index.html" style="color:#4299e1;text-decoration:none">← 返回首页</a>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/common.js"></script>
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const role = urlParams.get('role');
+
+        const roleTitles = {
+            'ranger': '护林员登录',
+            'quarantine': '检疫员登录',
+            'disposal': '处置队登录'
+        };
+        document.getElementById('loginTitle').textContent = roleTitles[role] || '用户登录';
+
+        function showAlert(msg, type) {
+            document.getElementById('alertArea').innerHTML =
+                `<div class="alert alert-${type}">${msg}</div>`;
+        }
+
+        async function doLogin() {
+            const userCode = document.getElementById('userCode').value.trim();
+            const password = document.getElementById('password').value.trim();
+
+            if (!userCode || !password) {
+                showAlert('请输入账号和密码', 'danger');
+                return;
+            }
+
+            const result = await apiPost(`${API_BASE}/user?action=login`, { userCode, password });
+            if (result.success) {
+                localStorage.setItem('forest_user', JSON.stringify(result.data));
+                currentUser = result.data;
+
+                const rolePages = { 1: 'ranger.html', 2: 'quarantine.html', 3: 'disposal.html' };
+                const targetPage = rolePages[result.data.user_role] || 'index.html';
+                window.location.href = targetPage;
+            } else {
+                showAlert(result.data || '登录失败', 'danger');
+            }
+        }
+
+        document.getElementById('password').addEventListener('keypress', e => {
+            if (e.key === 'Enter') doLogin();
+        });
+    </script>
+</body>
+</html>

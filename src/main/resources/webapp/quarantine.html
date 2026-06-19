@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>检疫员工作台 - 林业有害生物诱捕监测系统</title>
+    <link rel="stylesheet" href="css/common.css">
+</head>
+<body>
+    <div id="app" class="app-layout"></div>
+
+    <script src="js/common.js"></script>
+    <script>
+        if (!requireLogin(2)) throw new Error('need login');
+        const user = getUserInfo();
+
+        let currentMenu = 'pending';
+        let pendingList = [];
+        let reviewedList = [];
+        let keyPatrolList = [];
+
+        function render() {
+            document.getElementById('app').innerHTML = `
+                ${renderSidebar(currentMenu)}
+                <div class="app-main">
+                    <div class="app-header">
+                        <div class="page-title">${getPageTitle()}</div>
+                        <div style="color:#718096;font-size:14px">
+                            ${user.user_name} · ${user.role_name}
+                        </div>
+                    </div>
+                    <div class="app-content" id="appContent"></div>
+                </div>
+            `;
+            document.querySelectorAll('#sidebarMenu li').forEach(li => {
+                li.onclick = () => {
+                    currentMenu = li.dataset.key;
+                    render();
+                };
+            });
+            renderContent();
+        }
+
+        function getPageTitle() {
+            const titles = {
+                pending: '待复核诱捕记录',
+                reviewed: '已复核记录列表',
+                keyPatrol: '重点巡查点位管理'
+            };
+            return titles[currentMenu] || '';
+        }
+
+        async function renderContent() {
+            const content = document.getElementById('appContent');
+            if (currentMenu === 'pending') {
+                await renderPendingPage(content);
+            } else if (currentMenu === 'reviewed') {
+                await renderReviewedPage(content);
+            } else if (currentMenu === 'keyPatrol') {
+                await renderKeyPatrolPage(content);
+            }
+        }
+
+        async function renderPendingPage(container) {
+            const result = await apiGet(`${API_BASE}/record?action=list`, { status: 0 });
+            pendingList = result.success ? (result.data || []) : [];
+
+            container.innerHTML = `
+                <div class="stat-grid">
+                    <div class="stat-card warning"><div class="stat-value">${pendingList.length}</div><div class="stat-label">待复核记录</div></div>
+                    <div class="stat-card danger"><div class="stat-value">${pendingList.filter(r => r.is_suspect_quarantine == 1).length}</div><div class="stat-label">疑似检疫对象</div></div>
+                </div>
+
+                <div class="page-section">
+                    <div class="alert alert-warning">
+                        ⚠️ 请仔细复核每条诱捕记录，确认风险等级和是否为检疫对象。疑似检疫对象必须明确是否允许清理处置。
+                    </div>
+
+                    <div class="toolbar">
+                        <div class="toolbar-left">
+                            <label style="color:#718096">
+                                <input type="checkbox" id="filterSuspect" onchange="filterPending()" style="margin-right:5px">
+                                仅显示疑似检疫对象
+                            </label>
+                        </div>
+                    </div>
+
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>登记日期</th>
+                                <th>诱捕器</th>
+                                <th>害虫种类</th>
+                                <th>数量</th>
+                                <th>疑似检疫</th>
+                                <th>护林员</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pendingTableBody">
+                            ${renderPendingRows(pendingList)}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function renderPendingRows(records) {
+            if (records.length === 0) {
+                return `<tr><td colspan="7" class="empty-state">
+                    <div class="empty-state-icon">✅</div>暂无待复核记录
+                </td></tr>`;
+            }
+            return records.map(r => `
+                <tr style="${r.is_suspect_quarantine == 1 ? 'background:#fff5f5' : ''}">
+                    <td>${formatDate(r.record_date)}</td>
+                    <td>${r.trap_code}</td>
+                    <td>${r.insect_type}</td>
+                    <td>${r.insect_count}</td>
+                    <td>${getSuspectBadge(r.is_suspect_quarantine)}</td>
+                    <td>${r.ranger_name || '-'}</td>
+                    <td>
+                        <button class="btn btn-sm btn-default" onclick="viewRecord('${r.pk_trap_record}')">详情</button>
+                        <button class="btn btn-sm btn-primary" onclick="showReviewModal('${r.pk_trap_record}')">复核</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function filterPending() {
+            const onlySuspect = document.getElementById('filterSuspect').checked;
+            const filtered = onlySuspect ? pendingList.filter(r => r.is_suspect_quarantine == 1) : pendingList;
+            document.getElementById('pendingTableBody').innerHTML = renderPendingRows(filtered);
+        }
+
+        async function renderReviewedPage(container) {
+            const result = await apiGet(`${API_BASE}/review?action=list`);
+            reviewedList = result.success ? (result.data || []) : [];
+
+            container.innerHTML = `
+                <div class="stat-grid">
+                    <div class="stat-card"><div class="stat-value">${reviewedList.length}</div><div class="stat-label">总复核数</div></div>
+                    <div class="stat-card danger"><div class="stat-value">${reviewedList.filter(r => r.risk_level == 3).length}</div><div class="stat-label">高风险</div></div>
+                    <div class="stat-card warning"><div class="stat-value">${reviewedList.filter(r => r.risk_level == 2).length}</div><div class="stat-label">中风险</div></div>
+                    <div class="stat-card success"><div class="stat-value">${reviewedList.filter(r => r.risk_level == 1).length}</div><div class="stat-label">低风险</div></div>
+                </div>
+
+                <div class="page-section">
+                    <div class="toolbar">
+                        <div class="toolbar-left">
+                            <select class="filter-select" id="filterRisk" onchange="filterReviewed()">
+                                <option value="">全部风险等级</option>
+                                <option value="3">高风险</option>
+                                <option value="2">中风险</option>
+                                <option value="1">低风险</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>复核日期</th>
+                                <th>登记日期</th>
+                                <th>诱捕器</th>
+                                <th>害虫种类</th>
+                                <th>风险等级</th>
+                                <th>检疫对象</th>
+                                <th>允许清理</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="reviewedTableBody">
+                            ${renderReviewedRows(reviewedList)}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function renderReviewedRows(records) {
+            if (records.length === 0) {
+                return `<tr><td colspan="8" class="empty-state">
+                    <div class="empty-state-icon">📋</div>暂无复核记录
+                </td></tr>`;
+            }
+            return records.map(r => `
+                <tr>
+                    <td>${formatDate(r.review_date)}</td>
+                    <td>${formatDate(r.record_date)}</td>
+                    <td>${r.trap_code}</td>
+                    <td>${r.insect_type}</td>
+                    <td>${getRiskBadge(r.risk_level)}</td>
+                    <td>${r.is_quarantine == 1 ? '<span class="badge badge-danger">是</span>' : '<span class="badge badge-success">否</span>'}</td>
+                    <td>${r.is_allow_disposal == 1 ? '<span class="badge badge-success">允许</span>' : '<span class="badge badge-pending">不允许</span>'}</td>
+                    <td><button class="btn btn-sm btn-default" onclick="viewReview('${r.pk_forest_review}')">详情</button></td>
+                </tr>
+            `).join('');
+        }
+
+        function filterReviewed() {
+            const risk = document.getElementById('filterRisk').value;
+            const filtered = risk ? reviewedList.filter(r => r.risk_level == risk) : reviewedList;
+            document.getElementById('reviewedTableBody').innerHTML = renderReviewedRows(filtered);
+        }
+
+        async function renderKeyPatrolPage(container) {
+            const result = await apiGet(`${API_BASE}/trap?action=list`, { is_key_patrol: 1 });
+            keyPatrolList = result.success ? (result.data || []) : [];
+
+            container.innerHTML = `
+                <div class="alert alert-info">
+                    🌟 连续三次高风险的诱捕器点位会自动进入重点巡查。可手动管理重点巡查点位。
+                </div>
+
+                <div class="page-section">
+                    <div class="toolbar">
+                        <div class="toolbar-left">
+                            <span style="color:#718096">共 ${keyPatrolList.length} 个重点巡查点位</span>
+                        </div>
+                    </div>
+
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>诱捕器编号</th>
+                                <th>名称</th>
+                                <th>位置</th>
+                                <th>林种</th>
+                                <th>护林员</th>
+                                <th>重点巡查原因</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${keyPatrolList.length === 0 ? `
+                                <tr><td colspan="7" class="empty-state">
+                                    <div class="empty-state-icon">⭐</div>暂无重点巡查点位
+                                </td></tr>
+                            ` : keyPatrolList.map(t => `
+                                <tr>
+                                    <td>${t.trap_code}</td>
+                                    <td>${t.trap_name || '-'}</td>
+                                    <td>${t.location_desc || t.longitude + ', ' + t.latitude}</td>
+                                    <td>${t.forest_type || '-'}</td>
+                                    <td>${t.ranger_name || '-'}</td>
+                                    <td style="color:#d69e2e">${t.key_patrol_reason || '自动标记'}</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-default" onclick="cancelKeyPatrol('${t.pk_forest_trap}')">取消重点</button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        async function cancelKeyPatrol(pk) {
+            if (!confirm('确定取消该点位的重点巡查标记吗？')) return;
+            const result = await apiPost(`${API_BASE}/trap?action=update`, {
+                pk_forest_trap: pk, is_key_patrol: 0, key_patrol_reason: null
+            });
+            if (result.success) {
+                showAlert('已取消重点巡查标记', 'success');
+                renderContent();
+            } else {
+                showAlert(result.data || '操作失败', 'danger');
+            }
+        }
+
+        async function viewRecord(pk) {
+            const result = await apiGet(`${API_BASE}/record?action=query`, { pk });
+            if (!result.success) return;
+            const r = result.data;
+            let html = `
+                <div class="detail-row"><span class="detail-label">登记日期</span><span class="detail-value">${formatDate(r.record_date)}</span></div>
+                <div class="detail-row"><span class="detail-label">诱捕器</span><span class="detail-value">${r.trap_code} - ${r.trap_name}</span></div>
+                <div class="detail-row"><span class="detail-label">位置</span><span class="detail-value">${r.location_desc}</span></div>
+                <div class="detail-row"><span class="detail-label">害虫种类</span><span class="detail-value">${r.insect_type}</span></div>
+                <div class="detail-row"><span class="detail-label">捕获数量</span><span class="detail-value">${r.insect_count} 只</span></div>
+                <div class="detail-row"><span class="detail-label">疑似检疫</span><span class="detail-value">${getSuspectBadge(r.is_suspect_quarantine)}</span></div>
+                ${r.suspect_remark ? `<div class="detail-row"><span class="detail-label">疑似说明</span><span class="detail-value" style="color:#e53e3e">${r.suspect_remark}</span></div>` : ''}
+                <div class="detail-row"><span class="detail-label">护林员</span><span class="detail-value">${r.ranger_name || '-'}</span></div>
+            `;
+            showModal('诱捕记录详情', html, (mask) => {
+                showReviewModal(pk);
+                return true;
+            });
+            const modal = document.querySelector('.modal-mask:last-child');
+            if (modal) {
+                const okBtn = modal.querySelector('.modal-ok');
+                okBtn.textContent = '立即复核';
+                okBtn.className = 'btn btn-primary';
+            }
+        }
+
+        async function viewReview(pk) {
+            const result = await apiGet(`${API_BASE}/review?action=query`, { pk });
+            if (!result.success) return;
+            const r = result.data;
+            const html = `
+                <div class="detail-row"><span class="detail-label">复核日期</span><span class="detail-value">${formatDate(r.review_date)}</span></div>
+                <div class="detail-row"><span class="detail-label">风险等级</span><span class="detail-value">${getRiskBadge(r.risk_level)}</span></div>
+                <div class="detail-row"><span class="detail-label">确认检疫对象</span><span class="detail-value">${r.is_quarantine == 1 ? '是' : '否'}</span></div>
+                <div class="detail-row"><span class="detail-label">允许清理处置</span><span class="detail-value">${r.is_allow_disposal == 1 ? '允许' : '不允许'}</span></div>
+                ${r.review_remark ? `<div class="detail-row"><span class="detail-label">复核意见</span><span class="detail-value">${r.review_remark}</span></div>` : ''}
+                <div class="detail-row"><span class="detail-label">检疫员</span><span class="detail-value">${r.quarantine_name || '-'}</span></div>
+            `;
+            showModal('复核记录详情', html);
+        }
+
+        function showReviewModal(pkRecord) {
+            const html = `
+                <div class="form-group">
+                    <label class="form-label">风险等级 *</label>
+                    <select class="form-select" id="f_riskLevel">
+                        <option value="">请选择风险等级</option>
+                        <option value="1">低风险</option>
+                        <option value="2">中风险</option>
+                        <option value="3">高风险</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="f_isQuarantine" onchange="toggleAllowDisposal()">
+                        <span style="margin-left:5px">确认是检疫对象</span>
+                    </label>
+                </div>
+                <div class="form-group" id="allowDisposalGroup">
+                    <label class="form-label">是否允许清理处置 *</label>
+                    <select class="form-select" id="f_allowDisposal">
+                        <option value="">请选择</option>
+                        <option value="1">允许清理</option>
+                        <option value="0">不允许清理</option>
+                    </select>
+                    <div class="tip-text">疑似/确认检疫对象必须明确是否允许清理处置</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">复核意见</label>
+                    <textarea class="form-textarea" id="f_reviewRemark" placeholder="请填写复核意见..."></textarea>
+                </div>
+            `;
+            showModal('复核诱捕记录', html, async (mask) => {
+                const risk_level = parseInt(mask.querySelector('#f_riskLevel').value);
+                const is_quarantine = mask.querySelector('#f_isQuarantine').checked ? 1 : 0;
+                const isAllowSel = mask.querySelector('#f_allowDisposal');
+                const is_allow_disposal = isAllowSel && isAllowSel.value ? parseInt(isAllowSel.value) : (is_quarantine == 1 ? -1 : 0);
+                const review_remark = mask.querySelector('#f_reviewRemark').value.trim();
+
+                if (!risk_level) {
+                    showAlert('请选择风险等级', 'danger');
+                    return false;
+                }
+                if (is_quarantine == 1 && (is_allow_disposal < 0)) {
+                    showAlert('确认检疫对象时，必须选择是否允许清理处置', 'danger');
+                    return false;
+                }
+
+                const result = await apiPost(`${API_BASE}/review?action=save`, {
+                    pk_trap_record: pkRecord,
+                    risk_level,
+                    is_quarantine,
+                    is_allow_disposal: is_quarantine == 1 ? is_allow_disposal : 0,
+                    review_remark
+                });
+                if (result.success) {
+                    showAlert('复核成功！' + (result.data && result.data.message ? result.data.message : ''), 'success');
+                    renderContent();
+                } else {
+                    showAlert(result.data || '复核失败', 'danger');
+                    return false;
+                }
+            });
+            document.getElementById('allowDisposalGroup').style.display = 'none';
+        }
+
+        function toggleAllowDisposal() {
+            const checked = document.getElementById('f_isQuarantine').checked;
+            document.getElementById('allowDisposalGroup').style.display = checked ? 'block' : 'none';
+        }
+
+        render();
+    </script>
+</body>
+</html>

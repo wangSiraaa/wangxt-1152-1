@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>林业有害生物诱捕监测系统</title>
+    <link rel="stylesheet" href="css/common.css">
+</head>
+<body class="portal-body">
+    <div class="portal-container">
+        <div class="portal-header">
+            <h1>🌲 林业有害生物诱捕监测系统</h1>
+            <p class="portal-subtitle">Forest Pest Trap Monitoring System</p>
+        </div>
+
+        <div class="portal-cards">
+            <div class="portal-card ranger" onclick="location.href='ranger.html'">
+                <div class="card-icon">🧑‍🌾</div>
+                <div class="card-title">护林员入口</div>
+                <div class="card-desc">登记诱捕器位置和虫情数量</div>
+                <div class="card-btn">进入系统</div>
+            </div>
+
+            <div class="portal-card quarantine" onclick="location.href='quarantine.html'">
+                <div class="card-icon">🔬</div>
+                <div class="card-title">检疫员入口</div>
+                <div class="card-desc">复核风险等级和疑似检疫对象</div>
+                <div class="card-btn">进入系统</div>
+            </div>
+
+            <div class="portal-card disposal" onclick="location.href='disposal.html'">
+                <div class="card-icon">🪓</div>
+                <div class="card-title">处置队入口</div>
+                <div class="card-desc">处理疫木清理和拍照验证</div>
+                <div class="card-btn">进入系统</div>
+            </div>
+        </div>
+
+        <div class="portal-info">
+            <h3>📋 测试账号</h3>
+            <table class="info-table">
+                <tr><th>角色</th><th>账号</th><th>密码</th></tr>
+                <tr><td>护林员</td><td>ranger001</td><td>123456</td></tr>
+                <tr><td>检疫员</td><td>quarantine001</td><td>123456</td></tr>
+                <tr><td>处置队</td><td>disposal001</td><td>123456</td></tr>
+            </table>
+        </div>
+
+        <div class="portal-rules">
+            <h3>⚖️ 核心业务规则</h3>
+            <ul>
+                <li><span class="rule-tag rule-1">规则1</span> 疑似检疫对象未经过复核，不能进行清理处置</li>
+                <li><span class="rule-tag rule-2">规则2</span> 疫木清理未上传照片，不能关闭处置单</li>
+                <li><span class="rule-tag rule-3">规则3</span> 连续三次高风险，点位自动进入重点巡查</li>
+                <li><span class="rule-tag rule-4">规则4</span> 地图点位、诱捕记录、复核和处置状态持久化落库</li>
+            </ul>
+        </div>
+
+        <div class="portal-footer">
+            <p>© 2025 林业有害生物诱捕监测系统 | FBIP平台</p>
+        </div>
+    </div>
+</body>
+</html>

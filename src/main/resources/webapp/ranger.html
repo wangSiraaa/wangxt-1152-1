@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>护林员工作台 - 林业有害生物诱捕监测系统</title>
+    <link rel="stylesheet" href="css/common.css">
+</head>
+<body>
+    <div id="app" class="app-layout"></div>
+
+    <script src="js/common.js"></script>
+    <script>
+        if (!requireLogin(1)) throw new Error('need login');
+        const user = getUserInfo();
+
+        let currentMenu = 'trap';
+        let trapList = [];
+        let recordList = [];
+
+        function render() {
+            document.getElementById('app').innerHTML = `
+                ${renderSidebar(currentMenu)}
+                <div class="app-main">
+                    <div class="app-header">
+                        <div class="page-title">${getPageTitle()}</div>
+                        <div style="color:#718096;font-size:14px">
+                            ${user.user_name} · ${user.role_name}
+                        </div>
+                    </div>
+                    <div class="app-content" id="appContent"></div>
+                </div>
+            `;
+            document.querySelectorAll('#sidebarMenu li').forEach(li => {
+                li.onclick = () => {
+                    currentMenu = li.dataset.key;
+                    render();
+                };
+            });
+            renderContent();
+        }
+
+        function getPageTitle() {
+            const titles = {
+                trap: '诱捕器点位管理',
+                record: '虫情数量登记',
+                recordList: '登记记录查询'
+            };
+            return titles[currentMenu] || '';
+        }
+
+        async function renderContent() {
+            const content = document.getElementById('appContent');
+            if (currentMenu === 'trap') {
+                await renderTrapPage(content);
+            } else if (currentMenu === 'record') {
+                await renderRecordPage(content);
+            } else if (currentMenu === 'recordList') {
+                await renderRecordListPage(content);
+            }
+        }
+
+        async function renderTrapPage(container) {
+            const result = await apiGet(`${API_BASE}/trap?action=list`, { pk_ranger: user.pk_forest_user });
+            trapList = result.success ? (result.data || []) : [];
+
+            container.innerHTML = `
+                <div class="page-section">
+                    <div class="toolbar">
+                        <div class="toolbar-left">
+                            <span style="color:#718096">共 ${trapList.length} 个诱捕器点位</span>
+                        </div>
+                        <div class="toolbar-right">
+                            <button class="btn btn-primary" onclick="showAddTrapModal()">+ 新增诱捕器</button>
+                        </div>
+                    </div>
+
+                    <div class="map-placeholder" id="mapArea">
+                        <div style="font-size:16px;margin-bottom:8px">🗺️ 诱捕器点位分布图</div>
+                        <div style="font-size:12px;opacity:0.8">
+                            <span style="color:#e53e3e">●</span> 常规点位
+                            <span style="margin-left:15px;color:#d69e2e">●</span> 重点巡查
+                        </div>
+                    </div>
+
+                    <div style="height:20px"></div>
+
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>诱捕器编号</th>
+                                <th>名称</th>
+                                <th>位置(经度,纬度)</th>
+                                <th>位置描述</th>
+                                <th>林种</th>
+                                <th>类型</th>
+                                <th>状态</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${trapList.length === 0 ? `
+                                <tr><td colspan="8" class="empty-state">
+                                    <div class="empty-state-icon">📍</div>
+                                    暂无诱捕器点位，点击右上角新增
+                                </td></tr>
+                            ` : trapList.map(t => `
+                                <tr>
+                                    <td>${t.trap_code}</td>
+                                    <td>${t.trap_name || '-'}</td>
+                                    <td>${t.longitude}, ${t.latitude}</td>
+                                    <td>${t.location_desc || '-'}</td>
+                                    <td>${t.forest_type || '-'}</td>
+                                    <td>${t.trap_type || '-'}</td>
+                                    <td>${getKeyPatrolBadge(t.is_key_patrol)}</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-default" onclick="viewTrap('${t.pk_forest_trap}')">查看</button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+
+            trapList.forEach(t => {
+                const map = document.getElementById('mapArea');
+                if (map) {
+                    const x = ((t.longitude - 116.38) / 0.04) * 80 + 10;
+                    const y = ((t.latitude - 39.89) / 0.04) * 80 + 10;
+                    const marker = document.createElement('div');
+                    marker.className = 'map-marker' + (t.is_key_patrol == 1 ? ' key-patrol' : '');
+                    marker.style.left = x + '%';
+                    marker.style.top = y + '%';
+                    marker.innerHTML = `<span class="map-marker-label">${t.trap_code}</span>`;
+                    marker.title = t.trap_name + ' (' + t.location_desc + ')';
+                    map.appendChild(marker);
+                }
+            });
+        }
+
+        function showAddTrapModal() {
+            const html = `
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">诱捕器编号 *</label>
+                        <input class="form-input" id="f_trapCode" placeholder="如: TRAP004">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">诱捕器名称</label>
+                        <input class="form-input" id="f_trapName" placeholder="如: 东区3号诱捕器">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">经度 *</label>
+                        <input class="form-input" id="f_longitude" placeholder="如: 116.397" type="number" step="0.001">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">纬度 *</label>
+                        <input class="form-input" id="f_latitude" placeholder="如: 39.908" type="number" step="0.001">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">林种</label>
+                        <select class="form-select" id="f_forestType">
+                            <option value="">请选择</option>
+                            <option value="松林">松林</option>
+                            <option value="杉木林">杉木林</option>
+                            <option value="混交林">混交林</option>
+                            <option value="阔叶林">阔叶林</option>
+                            <option value="其他">其他</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">诱捕类型</label>
+                        <select class="form-select" id="f_trapType">
+                            <option value="">请选择</option>
+                            <option value="性诱剂">性诱剂</option>
+                            <option value="灯诱">灯诱</option>
+                            <option value="色板诱">色板诱</option>
+                            <option value="食物诱">食物诱</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">位置描述</label>
+                    <textarea class="form-textarea" id="f_locationDesc" placeholder="详细位置描述"></textarea>
+                </div>
+            `;
+            showModal('新增诱捕器点位', html, async (mask) => {
+                const trap_code = mask.querySelector('#f_trapCode').value.trim();
+                const trap_name = mask.querySelector('#f_trapName').value.trim();
+                const longitude = parseFloat(mask.querySelector('#f_longitude').value);
+                const latitude = parseFloat(mask.querySelector('#f_latitude').value);
+                const forest_type = mask.querySelector('#f_forestType').value;
+                const trap_type = mask.querySelector('#f_trapType').value;
+                const location_desc = mask.querySelector('#f_locationDesc').value.trim();
+
+                if (!trap_code || !longitude || !latitude) {
+                    showAlert('请填写必填项', 'danger');
+                    return false;
+                }
+
+                const result = await apiPost(`${API_BASE}/trap?action=save`, {
+                    trap_code, trap_name, longitude, latitude, forest_type, trap_type, location_desc
+                });
+                if (result.success) {
+                    showAlert('新增成功', 'success');
+                    renderContent();
+                } else {
+                    showAlert(result.data || '新增失败', 'danger');
+                    return false;
+                }
+            });
+        }
+
+        async function viewTrap(pk) {
+            const result = await apiGet(`${API_BASE}/trap?action=query`, { pk });
+            if (!result.success) return;
+            const t = result.data;
+            const html = `
+                <div class="detail-row"><span class="detail-label">诱捕器编号</span><span class="detail-value">${t.trap_code}</span></div>
+                <div class="detail-row"><span class="detail-label">名称</span><span class="detail-value">${t.trap_name || '-'}</span></div>
+                <div class="detail-row"><span class="detail-label">坐标</span><span class="detail-value">${t.longitude}, ${t.latitude}</span></div>
+                <div class="detail-row"><span class="detail-label">位置描述</span><span class="detail-value">${t.location_desc || '-'}</span></div>
+                <div class="detail-row"><span class="detail-label">林种</span><span class="detail-value">${t.forest_type || '-'}</span></div>
+                <div class="detail-row"><span class="detail-label">诱捕类型</span><span class="detail-value">${t.trap_type || '-'}</span></div>
+                <div class="detail-row"><span class="detail-label">状态</span><span class="detail-value">${getKeyPatrolBadge(t.is_key_patrol)}</span></div>
+                ${t.key_patrol_reason ? `<div class="detail-row"><span class="detail-label">重点巡查原因</span><span class="detail-value" style="color:#e53e3e">${t.key_patrol_reason}</span></div>` : ''}
+                <div class="detail-row"><span class="detail-label">负责护林员</span><span class="detail-value">${t.ranger_name || '-'}</span></div>
+            `;
+            showModal('诱捕器详情', html);
+        }
+
+        async function renderRecordPage(container) {
+            const trapResult = await apiGet(`${API_BASE}/trap?action=list`, { pk_ranger: user.pk_forest_user });
+            trapList = trapResult.success ? (trapResult.data || []) : [];
+
+            container.innerHTML = `
+                <div class="page-section">
+                    <div class="alert alert-info">
+                        💡 请选择诱捕器点位并填写本次的虫情登记信息
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">诱捕器点位 *</label>
+                            <select class="form-select" id="f_pkTrap">
+                                <option value="">请选择诱捕器</option>
+                                ${trapList.map(t => `<option value="${t.pk_forest_trap}">${t.trap_code} - ${t.trap_name || t.location_desc}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">登记日期</label>
+                            <input class="form-input" id="f_recordDate" type="date">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">害虫种类 *</label>
+                            <input class="form-input" id="f_insectType" placeholder="如: 松墨天牛、美国白蛾等">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">虫情数量(只) *</label>
+                            <input class="form-input" id="f_insectCount" type="number" min="0" placeholder="请输入捕获数量">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="f_isSuspect" onchange="toggleSuspectRemark()">
+                            <span style="margin-left:5px">疑似检疫对象</span>
+                        </label>
+                        <div class="tip-text">如发现疑似检疫性有害生物，请勾选并填写说明</div>
+                    </div>
+                    <div class="form-group" id="suspectRemarkGroup" style="display:none">
+                        <label class="form-label">疑似情况说明</label>
+                        <textarea class="form-textarea" id="f_suspectRemark" placeholder="请详细描述疑似特征..."></textarea>
+                    </div>
+
+                    <div style="margin-top:20px">
+                        <button class="btn btn-primary" onclick="submitRecord()" style="padding:12px 40px;font-size:16px">
+                            📝 提交登记
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.getElementById('f_recordDate').valueAsDate = new Date();
+        }
+
+        function toggleSuspectRemark() {
+            const checked = document.getElementById('f_isSuspect').checked;
+            document.getElementById('suspectRemarkGroup').style.display = checked ? 'block' : 'none';
+        }
+
+        async function submitRecord() {
+            const pk_forest_trap = document.getElementById('f_pkTrap').value;
+            const record_date = document.getElementById('f_recordDate').value;
+            const insect_type = document.getElementById('f_insectType').value.trim();
+            const insect_count = parseInt(document.getElementById('f_insectCount').value);
+            const is_suspect_quarantine = document.getElementById('f_isSuspect').checked ? 1 : 0;
+            const suspect_remark = document.getElementById('f_suspectRemark').value.trim();
+
+            if (!pk_forest_trap || !insect_type || isNaN(insect_count)) {
+                showAlert('请填写必填项', 'danger');
+                return;
+            }
+
+            const result = await apiPost(`${API_BASE}/record?action=save`, {
+                pk_forest_trap, record_date, insect_type, insect_count,
+                is_suspect_quarantine, suspect_remark
+            });
+            if (result.success) {
+                showAlert('登记成功！请等待检疫员复核', 'success');
+                currentMenu = 'recordList';
+                render();
+            } else {
+                showAlert(result.data || '登记失败', 'danger');
+            }
+        }
+
+        async function renderRecordListPage(container) {
+            const result = await apiGet(`${API_BASE}/record?action=list`);
+            recordList = result.success ? (result.data || []) : [];
+
+            container.innerHTML = `
+                <div class="stat-grid">
+                    <div class="stat-card"><div class="stat-value">${recordList.length}</div><div class="stat-label">总登记数</div></div>
+                    <div class="stat-card warning"><div class="stat-value">${recordList.filter(r => r.record_status == 0).length}</div><div class="stat-label">待复核</div></div>
+                    <div class="stat-card info"><div class="stat-value">${recordList.filter(r => r.record_status == 1).length}</div><div class="stat-label">已复核</div></div>
+                    <div class="stat-card success"><div class="stat-value">${recordList.filter(r => r.record_status == 2).length}</div><div class="stat-label">已处置</div></div>
+                </div>
+
+                <div class="page-section">
+                    <div class="toolbar">
+                        <div class="toolbar-left">
+                            <select class="filter-select" id="filterStatus" onchange="filterRecordList()">
+                                <option value="">全部状态</option>
+                                <option value="0">待复核</option>
+                                <option value="1">已复核</option>
+                                <option value="2">已处置</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>登记日期</th>
+                                <th>诱捕器</th>
+                                <th>害虫种类</th>
+                                <th>数量</th>
+                                <th>疑似检疫</th>
+                                <th>风险等级</th>
+                                <th>状态</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recordTableBody">
+                            ${renderRecordRows(recordList)}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function renderRecordRows(records) {
+            if (records.length === 0) {
+                return `<tr><td colspan="8" class="empty-state">
+                    <div class="empty-state-icon">📋</div>暂无登记记录
+                </td></tr>`;
+            }
+            return records.map(r => `
+                <tr>
+                    <td>${formatDate(r.record_date)}</td>
+                    <td>${r.trap_code}</td>
+                    <td>${r.insect_type}</td>
+                    <td>${r.insect_count}</td>
+                    <td>${getSuspectBadge(r.is_suspect_quarantine)}</td>
+                    <td>${getRiskBadge(r.risk_level)}</td>
+                    <td>${getStatusBadge(r.record_status)}</td>
+                    <td><button class="btn btn-sm btn-default" onclick="viewRecord('${r.pk_trap_record}')">详情</button></td>
+                </tr>
+            `).join('');
+        }
+
+        async function filterRecordList() {
+            const status = document.getElementById('filterStatus').value;
+            const filtered = status ? recordList.filter(r => r.record_status == status) : recordList;
+            document.getElementById('recordTableBody').innerHTML = renderRecordRows(filtered);
+        }
+
+        async function viewRecord(pk) {
+            const result = await apiGet(`${API_BASE}/record?action=query`, { pk });
+            if (!result.success) return;
+            const r = result.data;
+            let html = `
+                <div class="detail-row"><span class="detail-label">登记日期</span><span class="detail-value">${formatDate(r.record_date)}</span></div>
+                <div class="detail-row"><span class="detail-label">诱捕器</span><span class="detail-value">${r.trap_code} - ${r.trap_name}</span></div>
+                <div class="detail-row"><span class="detail-label">位置</span><span class="detail-value">${r.location_desc}</span></div>
+                <div class="detail-row"><span class="detail-label">害虫种类</span><span class="detail-value">${r.insect_type}</span></div>
+                <div class="detail-row"><span class="detail-label">捕获数量</span><span class="detail-value">${r.insect_count} 只</span></div>
+                <div class="detail-row"><span class="detail-label">疑似检疫</span><span class="detail-value">${getSuspectBadge(r.is_suspect_quarantine)}</span></div>
+                ${r.suspect_remark ? `<div class="detail-row"><span class="detail-label">疑似说明</span><span class="detail-value">${r.suspect_remark}</span></div>` : ''}
+                <div class="detail-row"><span class="detail-label">风险等级</span><span class="detail-value">${getRiskBadge(r.risk_level)}</span></div>
+                <div class="detail-row"><span class="detail-label">状态</span><span class="detail-value">${getStatusBadge(r.record_status)}</span></div>
+            `;
+            if (r.reviews && r.reviews.length > 0) {
+                html += `<div style="margin-top:15px;padding-top:10px;border-top:1px solid #eee"><b>复核记录：</b></div>`;
+                r.reviews.forEach(v => {
+                    html += `
+                        <div class="detail-row"><span class="detail-label">复核日期</span><span class="detail-value">${formatDate(v.review_date)}</span></div>
+                        <div class="detail-row"><span class="detail-label">风险等级</span><span class="detail-value">${getRiskBadge(v.risk_level)}</span></div>
+                        <div class="detail-row"><span class="detail-label">检疫员</span><span class="detail-value">${v.quarantine_name || '-'}</span></div>
+                        ${v.review_remark ? `<div class="detail-row"><span class="detail-label">复核意见</span><span class="detail-value">${v.review_remark}</span></div>` : ''}
+                    `;
+                });
+            }
+            if (r.disposals && r.disposals.length > 0) {
+                html += `<div style="margin-top:15px;padding-top:10px;border-top:1px solid #eee"><b>处置记录：</b></div>`;
+                r.disposals.forEach(d => {
+                    html += `
+                        <div class="detail-row"><span class="detail-label">处置日期</span><span class="detail-value">${formatDate(d.disposal_date)}</span></div>
+                        <div class="detail-row"><span class="detail-label">处置方式</span><span class="detail-value">${d.disposal_method || '-'}</span></div>
+                        <div class="detail-row"><span class="detail-label">处理数量</span><span class="detail-value">${d.tree_count || '-'} 株</span></div>
+                        <div class="detail-row"><span class="detail-label">拍照</span><span class="detail-value">${d.has_photo == 1 ? '✅ 已上传' : '❌ 未上传'}</span></div>
+                        <div class="detail-row"><span class="detail-label">状态</span><span class="detail-value">${getDisposalStatusBadge(d.disposal_status)}</span></div>
+                    `;
+                });
+            }
+            showModal('诱捕记录详情', html);
+        }
+
+        render();
+    </script>
+</body>
+</html>
